@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 
 const {
     JIRA_BASE_URL,
