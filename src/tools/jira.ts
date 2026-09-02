@@ -12,11 +12,14 @@ import {
   getJiraBoards,
   getJiraIssue,
   getJiraIssueComments,
+  getJiraIssueLinkTypes,
   getJiraIssueSprint,
   getJiraIssueTypes,
   getJiraPriorities,
   getJiraProjects,
   getJiraTransitions,
+  linkJiraIssues,
+  moveIssuesToBacklog,
   searchJiraIssues,
   transitionJiraIssue,
   updateJiraIssue,
@@ -26,6 +29,7 @@ import {
   resolveActiveSprint,
   resolveAssignableJiraUser,
   resolveJiraBoard,
+  resolveJiraLinkType,
   resolveJiraProject,
   resolveJiraTransition,
   sprintMatchesProject,
@@ -33,6 +37,7 @@ import {
 import type {
   JiraBoard,
   JiraIssue,
+  JiraIssueLink,
   JiraSprint,
   JiraTransition,
   JiraUser,
@@ -91,6 +96,22 @@ function summarizeIssue(issue: JiraIssue) {
         : null,
     created: fields.created ?? null,
     updated: fields.updated ?? null,
+  };
+}
+
+// Describes a link from the point of view of `issueKey`,
+// e.g. { relation: "blocks", key: "DEV-2" } or { relation: "is blocked by", key: "DEV-1" }.
+function formatLink(link: JiraIssueLink) {
+  const other = link.outwardIssue ?? link.inwardIssue;
+  const relation = link.outwardIssue ? link.type.outward : link.type.inward;
+
+  return {
+    id: link.id,
+    type: link.type.name,
+    relation,
+    key: other?.key ?? null,
+    summary: other?.fields?.summary ?? null,
+    status: other?.fields?.status?.name ?? null,
   };
 }
 
@@ -546,6 +567,7 @@ export function registerJiraTools(server: McpServer): void {
                 summary: subtask.fields?.summary ?? null,
                 status: subtask.fields?.status?.name ?? null,
               })),
+              links: (fields.issuelinks ?? []).map(formatLink),
               comments: commentPage
                   ? {
                     total: commentPage.total,
@@ -983,6 +1005,349 @@ export function registerJiraTools(server: McpServer): void {
               previousAssignee,
               assignee: formatUser(issueAfter.fields.assignee),
               changed: true,
+            });
+          }),
+  );
+  server.registerTool(
+      'add-jira-issue-to-sprint',
+      {
+        title: 'Add Jira Issue To Sprint',
+        description:
+            'Moves an existing Jira issue into the active sprint of its project Scrum board, or back to the backlog. The board and sprint are inferred from the issue project the same way create-jira-ticket does.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          toBacklog: z
+              .boolean()
+              .optional()
+              .describe('When true, removes the issue from its sprint and sends it to the backlog'),
+
+          board: z
+              .string()
+              .optional()
+              .describe(
+                  'Optional Jira Scrum board name or ID. Only needed when the project has multiple boards',
+              ),
+
+          sprint: z
+              .string()
+              .optional()
+              .describe(
+                  'Optional active sprint name or ID. Only needed when the board has multiple active sprints',
+              ),
+        }),
+      },
+      async ({ issueKey, toBacklog, board, sprint }) =>
+          runTool('Unable to move Jira issue', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+
+            const [issue, currentSprint] = await Promise.all([
+              getJiraIssue(normalizedKey),
+              getJiraIssueSprint(normalizedKey),
+            ]);
+
+            const previousSprint = currentSprint
+                ? { id: currentSprint.id, name: currentSprint.name }
+                : null;
+
+            if (toBacklog) {
+              if (!currentSprint) {
+                return jsonResult({
+                  issueKey: normalizedKey,
+                  url: issueUrl(normalizedKey),
+                  previousSprint,
+                  sprint: null,
+                  changed: false,
+                  message: `${normalizedKey} is already in the backlog`,
+                });
+              }
+
+              await moveIssuesToBacklog([normalizedKey]);
+
+              return jsonResult({
+                issueKey: normalizedKey,
+                url: issueUrl(normalizedKey),
+                previousSprint,
+                sprint: null,
+                changed: true,
+              });
+            }
+
+            const projectKey = issue.fields.project?.key;
+
+            if (!projectKey) {
+              throw new Error(`Unable to determine the project of ${normalizedKey}`);
+            }
+
+            const resolvedProject = await resolveJiraProject(projectKey);
+            const resolvedBoard = await resolveJiraBoard(resolvedProject.key, board);
+            const activeSprint = await resolveActiveSprint(
+                resolvedBoard,
+                resolvedProject,
+                sprint,
+            );
+
+            const sprintResult = {
+              id: activeSprint.id,
+              name: activeSprint.name,
+              board: { id: resolvedBoard.id, name: resolvedBoard.name },
+            };
+
+            if (currentSprint?.id === activeSprint.id) {
+              return jsonResult({
+                issueKey: normalizedKey,
+                url: issueUrl(normalizedKey),
+                previousSprint,
+                sprint: sprintResult,
+                changed: false,
+                message: `${normalizedKey} is already in sprint "${activeSprint.name}"`,
+              });
+            }
+
+            await addIssueToSprint(normalizedKey, activeSprint.id);
+
+            return jsonResult({
+              issueKey: normalizedKey,
+              url: issueUrl(normalizedKey),
+              previousSprint,
+              sprint: sprintResult,
+              changed: true,
+            });
+          }),
+  );
+
+  server.registerTool(
+      'link-jira-issues',
+      {
+        title: 'Link Jira Issues',
+        description:
+            'Creates a relation between two Jira issues, read as "<issueKey> <relation> <targetIssueKey>", for example DEV-1 "blocks" DEV-2 or DEV-1 "is blocked by" DEV-2. The relation can be a link type name (Blocks, Cloners, Duplicate, Relates) or either of its directional phrases.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Source issue key, for example DEV-123'),
+
+          relation: z
+              .string()
+              .describe(
+                  'Relation phrase or link type, for example "blocks", "is blocked by", "relates to", "duplicates", "clones"',
+              ),
+
+          targetIssueKey: z
+              .string()
+              .describe('Target issue key, for example DEV-456'),
+
+          comment: z
+              .string()
+              .optional()
+              .describe('Optional plain-text comment added to the source issue with the link'),
+        }),
+      },
+      async ({ issueKey, relation, targetIssueKey, comment }) =>
+          runTool('Unable to link Jira issues', async () => {
+            const sourceKey = normalizeIssueKey(issueKey);
+            const targetKey = normalizeIssueKey(targetIssueKey);
+
+            if (sourceKey === targetKey) {
+              throw new Error('An issue cannot be linked to itself');
+            }
+
+            const [linkTypes, sourceIssue] = await Promise.all([
+              getJiraIssueLinkTypes(),
+              getJiraIssue(sourceKey),
+            ]);
+
+            const { linkType, sourceIsInward } = resolveJiraLinkType(
+                linkTypes,
+                relation,
+            );
+
+            const outwardKey = sourceIsInward ? targetKey : sourceKey;
+            const inwardKey = sourceIsInward ? sourceKey : targetKey;
+
+            const alreadyLinked = (sourceIssue.fields.issuelinks ?? []).some(
+                (link) =>
+                    link.type.id === linkType.id &&
+                    (sourceIsInward
+                        ? link.inwardIssue?.key === targetKey
+                        : link.outwardIssue?.key === targetKey),
+            );
+
+            const description = `${outwardKey} ${linkType.outward} ${inwardKey}`;
+
+            if (alreadyLinked) {
+              return jsonResult({
+                link: description,
+                type: linkType.name,
+                outwardIssue: outwardKey,
+                inwardIssue: inwardKey,
+                changed: false,
+                message: `Link already exists: ${description}`,
+              });
+            }
+
+            await linkJiraIssues(
+                linkType.name,
+                outwardKey,
+                inwardKey,
+                comment?.trim() || undefined,
+            );
+
+            return jsonResult({
+              link: description,
+              type: linkType.name,
+              outwardIssue: outwardKey,
+              inwardIssue: inwardKey,
+              url: issueUrl(sourceKey),
+              changed: true,
+            });
+          }),
+  );
+
+  server.registerTool(
+      'create-jira-subtask',
+      {
+        title: 'Create Jira Subtask',
+        description:
+            'Creates a subtask under an existing Jira issue. The project and subtask issue type are taken from the parent; the subtask inherits the parent sprint automatically.',
+        inputSchema: z.object({
+          parentKey: z
+              .string()
+              .describe('Key of the parent issue, for example DEV-123'),
+
+          summary: z
+              .string()
+              .describe('Short title of the subtask'),
+
+          description: z
+              .string()
+              .optional()
+              .describe('Optional detailed description'),
+
+          priority: z
+              .string()
+              .optional()
+              .describe('Optional Jira priority name'),
+
+          labels: z
+              .array(z.string())
+              .optional()
+              .describe('Optional Jira labels'),
+
+          assignToMe: z
+              .boolean()
+              .optional()
+              .describe('When true, assigns the subtask to the authenticated Jira user'),
+
+          issueType: z
+              .string()
+              .optional()
+              .describe(
+                  'Optional subtask type name, for example Sub-task or Technical task. Defaults to Sub-task',
+              ),
+        }),
+      },
+      async ({
+               parentKey,
+               summary,
+               description,
+               priority,
+               labels,
+               assignToMe,
+               issueType,
+             }) =>
+          runTool('Unable to create Jira subtask', async () => {
+            const normalizedParent = normalizeIssueKey(parentKey);
+
+            const parent = await getJiraIssue(normalizedParent);
+
+            if (parent.fields.issuetype?.subtask) {
+              throw new Error(
+                  `${normalizedParent} is itself a subtask; subtasks cannot be nested`,
+              );
+            }
+
+            const projectKey = parent.fields.project?.key;
+
+            if (!projectKey) {
+              throw new Error(`Unable to determine the project of ${normalizedParent}`);
+            }
+
+            const [subtaskTypes, currentUser] = await Promise.all([
+              getJiraIssueTypes(projectKey, true),
+              assignToMe ? getCurrentJiraUser() : Promise.resolve(null),
+            ]);
+
+            if (subtaskTypes.length === 0) {
+              throw new Error(`Project "${projectKey}" has no subtask issue type`);
+            }
+
+            let subtaskType = subtaskTypes[0];
+
+            if (issueType) {
+              const match = subtaskTypes.find(
+                  (candidate) => normalize(candidate.name) === normalize(issueType),
+              );
+
+              if (!match) {
+                throw new Error(
+                    `Subtask type "${issueType}" was not found. Available: ${subtaskTypes.map((t) => t.name).join(', ')}`,
+                );
+              }
+
+              subtaskType = match;
+            } else if (subtaskTypes.length > 1) {
+              // Prefer Jira's standard subtask type when a project defines several.
+              const standard = subtaskTypes.find((candidate) =>
+                  ['sub-task', 'subtask'].includes(normalize(candidate.name)),
+              );
+
+              if (!standard) {
+                throw new Error(
+                    `Project "${projectKey}" has several subtask types. Specify issueType: ${subtaskTypes.map((t) => t.name).join(', ')}`,
+                );
+              }
+
+              subtaskType = standard;
+            }
+
+            const fields: Record<string, unknown> = {
+              project: { key: projectKey },
+              parent: { key: normalizedParent },
+              issuetype: { id: subtaskType.id },
+              summary: summary.trim(),
+            };
+
+            if (description?.trim()) {
+              fields.description = createJiraDescription(description.trim());
+            }
+
+            if (priority) {
+              fields.priority = { name: priority };
+            }
+
+            if (labels?.length) {
+              fields.labels = labels;
+            }
+
+            if (currentUser) {
+              fields.assignee = { accountId: currentUser.accountId };
+            }
+
+            const created = await createJiraIssue(fields);
+
+            return jsonResult({
+              id: created.id,
+              key: created.key,
+              url: issueUrl(created.key),
+              issueType: subtaskType.name,
+              parent: {
+                key: normalizedParent,
+                summary: parent.fields.summary,
+              },
+              assignee: formatUser(currentUser),
             });
           }),
   );

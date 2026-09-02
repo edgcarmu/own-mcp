@@ -6,6 +6,7 @@ import {
 } from './api.js';
 import type {
   JiraBoard,
+  JiraIssueLinkType,
   JiraProject,
   JiraSprint,
   JiraTransition,
@@ -288,5 +289,52 @@ export async function resolveAssignableJiraUser(
 
   throw new Error(
       `Multiple assignable users match "${query}": ${matches}. Use a full name, email, or account ID`,
+  );
+}
+
+export function formatLinkTypes(linkTypes: JiraIssueLinkType[]): string {
+  return linkTypes
+      .map(
+          (linkType) =>
+              `${linkType.name} ("${linkType.outward}" / "${linkType.inward}")`,
+      )
+      .join(', ');
+}
+
+export type ResolvedLink = {
+  linkType: JiraIssueLinkType;
+  // True when the relation was given in the inward direction
+  // ("is blocked by"), meaning the source issue is the inward one.
+  sourceIsInward: boolean;
+};
+
+// Matches a relation by link type name ("Blocks"), outward description
+// ("blocks") or inward description ("is blocked by").
+export function resolveJiraLinkType(
+    linkTypes: JiraIssueLinkType[],
+    relation: string,
+): ResolvedLink {
+  const normalizedRelation = normalize(relation);
+
+  const byOutward = linkTypes.find(
+      (candidate) =>
+          normalize(candidate.outward) === normalizedRelation ||
+          normalize(candidate.name) === normalizedRelation,
+  );
+
+  if (byOutward) {
+    return { linkType: byOutward, sourceIsInward: false };
+  }
+
+  const byInward = linkTypes.find(
+      (candidate) => normalize(candidate.inward) === normalizedRelation,
+  );
+
+  if (byInward) {
+    return { linkType: byInward, sourceIsInward: true };
+  }
+
+  throw new Error(
+      `Relation "${relation}" was not found. Available link types: ${formatLinkTypes(linkTypes)}`,
   );
 }

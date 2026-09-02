@@ -8,6 +8,8 @@ import type {
   JiraCreatedIssue,
   JiraIssue,
   JiraIssueComment,
+  JiraIssueLinkType,
+  JiraIssueLinkTypesResponse,
   JiraIssueType,
   JiraPriority,
   JiraProject,
@@ -59,8 +61,11 @@ export async function getJiraPriorities(): Promise<JiraPriority[]> {
   );
 }
 
+// Returns the standard issue types of a project, or only the subtask
+// types when `subtasks` is true.
 export async function getJiraIssueTypes(
     projectKey: string,
+    subtasks = false,
 ): Promise<JiraIssueType[]> {
   const project = await jiraFetch<{ issueTypes?: JiraIssueType[] }>(
       `/rest/api/3/project/${projectKey}?expand=issueTypes`,
@@ -70,7 +75,7 @@ export async function getJiraIssueTypes(
   );
 
   return (project.issueTypes ?? []).filter(
-      (issueType) => !issueType.subtask,
+      (issueType) => Boolean(issueType.subtask) === subtasks,
   );
 }
 
@@ -171,6 +176,7 @@ export const ISSUE_DETAIL_FIELDS = [
   'description',
   'resolutiondate',
   'subtasks',
+  'issuelinks',
 ];
 
 export async function getJiraIssue(
@@ -345,6 +351,58 @@ export async function assignJiraIssue(
         method: 'PUT',
         body: { accountId },
         errorContext: `Unable to assign ${issueKey}`,
+      },
+  );
+}
+
+export async function moveIssuesToBacklog(
+    issueKeys: string[],
+): Promise<void> {
+  await jiraFetch<void>(
+      '/rest/agile/1.0/backlog/issue',
+      {
+        method: 'POST',
+        body: { issues: issueKeys },
+        errorContext: `Unable to move ${issueKeys.join(', ')} to the backlog`,
+      },
+  );
+}
+
+export async function getJiraIssueLinkTypes(): Promise<JiraIssueLinkType[]> {
+  const result = await jiraFetch<JiraIssueLinkTypesResponse>(
+      '/rest/api/3/issueLinkType',
+      {
+        errorContext: 'Unable to retrieve Jira issue link types',
+      },
+  );
+
+  return result.issueLinkTypes;
+}
+
+// Creates "<outwardKey> <type.outward> <inwardKey>", e.g. for the Blocks
+// type: outward DEV-1 "blocks" inward DEV-2.
+export async function linkJiraIssues(
+    linkTypeName: string,
+    outwardKey: string,
+    inwardKey: string,
+    comment?: string,
+): Promise<void> {
+  const body: Record<string, unknown> = {
+    type: { name: linkTypeName },
+    outwardIssue: { key: outwardKey },
+    inwardIssue: { key: inwardKey },
+  };
+
+  if (comment) {
+    body.comment = { body: createJiraDescription(comment) };
+  }
+
+  await jiraFetch<void>(
+      '/rest/api/3/issueLink',
+      {
+        method: 'POST',
+        body,
+        errorContext: `Unable to link ${outwardKey} and ${inwardKey}`,
       },
   );
 }

@@ -100,6 +100,7 @@ export type JiraIssueFields = {
     key: string;
     fields?: { summary?: string; status?: JiraStatus };
   }[];
+  issuelinks?: JiraIssueLink[];
   // Populated by the Agile API (/rest/agile/1.0/issue/{key}).
   sprint?: JiraSprint | null;
   closedSprint?: JiraSprint[];
@@ -137,4 +138,32 @@ export type JiraTransition = {
 
 export type JiraTransitionsResponse = {
   transitions: JiraTransition[];
+};
+
+export type JiraIssueLinkType = {
+  id: string;
+  name: string;
+  inward: string;
+  outward: string;
+};
+
+export type JiraIssueLinkTypesResponse = {
+  issueLinkTypes: JiraIssueLinkType[];
+};
+
+export type JiraLinkedIssue = {
+  id: string;
+  key: string;
+  fields?: {
+    summary?: string;
+    status?: JiraStatus;
+    issuetype?: JiraNamedEntity;
+  };
+};
+
+export type JiraIssueLink = {
+  id: string;
+  type: JiraIssueLinkType;
+  inwardIssue?: JiraLinkedIssue;
+  outwardIssue?: JiraLinkedIssue;
 };
