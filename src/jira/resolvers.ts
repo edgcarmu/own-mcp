@@ -7,6 +7,7 @@ import type {
   JiraBoard,
   JiraProject,
   JiraSprint,
+  JiraTransition,
 } from './types.js';
 
 function normalize(value: string): string {
@@ -179,5 +180,68 @@ export async function resolveActiveSprint(
 
   throw new Error(
       `Multiple active sprints found for board "${board.name}" and none matches project "${project.name}" unambiguously. Specify the sprint. Active sprints: ${availableSprints}`,
+  );
+}
+
+export function formatTransitions(
+    transitions: JiraTransition[],
+): string {
+  return transitions
+      .map(
+          (transition) =>
+              `${transition.name} -> ${transition.to.name} (${transition.id})`,
+      )
+      .join(', ');
+}
+
+// Matches a transition by its own name, by the name of the status it leads
+// to, or by its numeric ID. Users usually think in target statuses
+// ("In Progress") while Jira names transitions by action ("Start work").
+export function resolveJiraTransition(
+    transitions: JiraTransition[],
+    target: string,
+): JiraTransition {
+  if (transitions.length === 0) {
+    throw new Error(
+        'No transitions are available for this issue with the current user',
+    );
+  }
+
+  const normalizedTarget = normalize(target);
+
+  const byId = transitions.find(
+      (candidate) => candidate.id === normalizedTarget,
+  );
+
+  if (byId) {
+    return byId;
+  }
+
+  const byName = transitions.filter(
+      (candidate) => normalize(candidate.name) === normalizedTarget,
+  );
+
+  if (byName.length === 1) {
+    return byName[0];
+  }
+
+  const byStatus = transitions.filter(
+      (candidate) => normalize(candidate.to.name) === normalizedTarget,
+  );
+
+  if (byStatus.length === 1) {
+    return byStatus[0];
+  }
+
+  const available = formatTransitions(transitions);
+
+  if (byName.length > 1 || byStatus.length > 1) {
+    throw new Error(
+        `Transition "${target}" is ambiguous. Specify the transition ID. Available transitions: ${available}`,
+    );
+  }
+
+  throw new Error(
+      `Transition "${target}" was not found. Available transitions: ${available}`,
   );
 }

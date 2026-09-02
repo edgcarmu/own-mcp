@@ -127,3 +127,14 @@ export type JiraSearchResponse = {
   isLast?: boolean;
   nextPageToken?: string;
 };
+
+export type JiraTransition = {
+  id: string;
+  name: string;
+  to: JiraStatus;
+  hasScreen?: boolean;
+};
+
+export type JiraTransitionsResponse = {
+  transitions: JiraTransition[];
+};

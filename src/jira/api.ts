@@ -15,6 +15,8 @@ import type {
   JiraSearchResponse,
   JiraSprint,
   JiraSprintSearchResponse,
+  JiraTransition,
+  JiraTransitionsResponse,
   JiraUser,
 } from './types.js';
 
@@ -246,4 +248,44 @@ export async function searchJiraIssues(
   );
 
   return result.issues;
+}
+
+export async function getJiraTransitions(
+    issueKey: string,
+): Promise<JiraTransition[]> {
+  const result = await jiraFetch<JiraTransitionsResponse>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
+      {
+        errorContext: `Unable to retrieve transitions for ${issueKey}`,
+      },
+  );
+
+  return result.transitions;
+}
+
+// Applies a workflow transition. When a comment is given it is added in the
+// same request, so the status change and the note land together or not at all.
+export async function transitionJiraIssue(
+    issueKey: string,
+    transitionId: string,
+    comment?: string,
+): Promise<void> {
+  const body: Record<string, unknown> = {
+    transition: { id: transitionId },
+  };
+
+  if (comment) {
+    body.update = {
+      comment: [{ add: { body: createJiraDescription(comment) } }],
+    };
+  }
+
+  await jiraFetch<void>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
+      {
+        method: 'POST',
+        body,
+        errorContext: `Unable to transition ${issueKey}`,
+      },
+  );
 }

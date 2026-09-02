@@ -15,22 +15,30 @@ import {
   getJiraIssueTypes,
   getJiraPriorities,
   getJiraProjects,
+  getJiraTransitions,
   searchJiraIssues,
+  transitionJiraIssue,
 } from '../jira/api.js';
 import { getJiraBaseUrl } from '../jira/client.js';
 import {
   resolveActiveSprint,
   resolveJiraBoard,
   resolveJiraProject,
+  resolveJiraTransition,
   sprintMatchesProject,
 } from '../jira/resolvers.js';
 import type {
   JiraBoard,
   JiraIssue,
   JiraSprint,
+  JiraTransition,
   JiraUser,
 } from '../jira/types.js';
 import { jsonResult, runTool } from './results.js';
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9_]*-\d+$/;
 
@@ -80,6 +88,15 @@ function summarizeIssue(issue: JiraIssue) {
         : null,
     created: fields.created ?? null,
     updated: fields.updated ?? null,
+  };
+}
+
+function formatTransition(transition: JiraTransition) {
+  return {
+    id: transition.id,
+    name: transition.name,
+    toStatus: transition.to.name,
+    toStatusCategory: transition.to.statusCategory?.name ?? null,
   };
 }
 
@@ -665,6 +682,107 @@ export function registerJiraTools(server: McpServer): void {
               jql: query,
               count: issues.length,
               issues: issues.map(summarizeIssue),
+            });
+          }),
+  );
+  server.registerTool(
+      'list-jira-transitions',
+      {
+        title: 'List Jira Transitions',
+        description:
+            'Returns the workflow transitions currently available for a Jira issue, with the status each one leads to. Use it to see which statuses transition-jira-issue can move the issue to.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+        }),
+      },
+      async ({ issueKey }) =>
+          runTool('Unable to list Jira transitions', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+
+            const [issue, transitions] = await Promise.all([
+              getJiraIssue(normalizedKey),
+              getJiraTransitions(normalizedKey),
+            ]);
+
+            return jsonResult({
+              issueKey: normalizedKey,
+              currentStatus: issue.fields.status?.name ?? null,
+              transitions: transitions.map(formatTransition),
+            });
+          }),
+  );
+
+  server.registerTool(
+      'transition-jira-issue',
+      {
+        title: 'Transition Jira Issue',
+        description:
+            'Moves a Jira issue to another status by applying a workflow transition. The target can be the destination status name (for example "In Progress" or "Done"), the transition name, or the transition ID. Optionally adds a comment in the same operation.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          transition: z
+              .string()
+              .describe(
+                  'Target status name, transition name, or transition ID. Use list-jira-transitions to see the options',
+              ),
+
+          comment: z
+              .string()
+              .optional()
+              .describe(
+                  'Optional plain-text comment added together with the status change',
+              ),
+        }),
+      },
+      async ({ issueKey, transition, comment }) =>
+          runTool('Unable to transition Jira issue', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+            const trimmedComment = comment?.trim() || undefined;
+
+            const [issueBefore, transitions] = await Promise.all([
+              getJiraIssue(normalizedKey),
+              getJiraTransitions(normalizedKey),
+            ]);
+
+            const previousStatus = issueBefore.fields.status?.name ?? null;
+
+            const resolved = resolveJiraTransition(transitions, transition);
+
+            if (previousStatus && normalize(resolved.to.name) === normalize(previousStatus)) {
+              return jsonResult({
+                issueKey: normalizedKey,
+                url: issueUrl(normalizedKey),
+                previousStatus,
+                status: previousStatus,
+                transition: formatTransition(resolved),
+                changed: false,
+                message: `${normalizedKey} is already in status "${previousStatus}"`,
+              });
+            }
+
+            await transitionJiraIssue(
+                normalizedKey,
+                resolved.id,
+                trimmedComment,
+            );
+
+            // Jira answers 204 to the transition; read the issue back so the
+            // reported status is what Jira actually has, not what was requested.
+            const issueAfter = await getJiraIssue(normalizedKey);
+
+            return jsonResult({
+              issueKey: normalizedKey,
+              url: issueUrl(normalizedKey),
+              previousStatus,
+              status: issueAfter.fields.status?.name ?? null,
+              transition: formatTransition(resolved),
+              changed: true,
+              commentAdded: trimmedComment !== undefined,
             });
           }),
   );
