@@ -1,5 +1,6 @@
 import {
   getActiveSprints,
+  getAssignableJiraUsers,
   getJiraBoards,
   getJiraProjects,
 } from './api.js';
@@ -8,6 +9,7 @@ import type {
   JiraProject,
   JiraSprint,
   JiraTransition,
+  JiraUser,
 } from './types.js';
 
 function normalize(value: string): string {
@@ -243,5 +245,48 @@ export function resolveJiraTransition(
 
   throw new Error(
       `Transition "${target}" was not found. Available transitions: ${available}`,
+  );
+}
+
+// Resolves a person by display name, email, or account ID among the users
+// that can be assigned to the issue.
+export async function resolveAssignableJiraUser(
+    issueKey: string,
+    query: string,
+): Promise<JiraUser> {
+  const users = (await getAssignableJiraUsers(issueKey, query)).filter(
+      (candidate) => candidate.active,
+  );
+
+  const normalizedQuery = normalize(query);
+
+  const exactMatch = users.find(
+      (candidate) =>
+          candidate.accountId === query.trim() ||
+          normalize(candidate.displayName) === normalizedQuery ||
+          (candidate.emailAddress !== undefined &&
+              normalize(candidate.emailAddress) === normalizedQuery),
+  );
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (users.length === 1) {
+    return users[0];
+  }
+
+  if (users.length === 0) {
+    throw new Error(
+        `No assignable user found matching "${query}" for ${issueKey}`,
+    );
+  }
+
+  const matches = users
+      .map((candidate) => candidate.displayName)
+      .join(', ');
+
+  throw new Error(
+      `Multiple assignable users match "${query}": ${matches}. Use a full name, email, or account ID`,
   );
 }

@@ -5,6 +5,7 @@ import { adfToText, createJiraDescription } from '../jira/adf.js';
 import {
   addIssueToSprint,
   addJiraComment,
+  assignJiraIssue,
   createJiraIssue,
   getActiveSprints,
   getCurrentJiraUser,
@@ -18,10 +19,12 @@ import {
   getJiraTransitions,
   searchJiraIssues,
   transitionJiraIssue,
+  updateJiraIssue,
 } from '../jira/api.js';
 import { getJiraBaseUrl } from '../jira/client.js';
 import {
   resolveActiveSprint,
+  resolveAssignableJiraUser,
   resolveJiraBoard,
   resolveJiraProject,
   resolveJiraTransition,
@@ -783,6 +786,203 @@ export function registerJiraTools(server: McpServer): void {
               transition: formatTransition(resolved),
               changed: true,
               commentAdded: trimmedComment !== undefined,
+            });
+          }),
+  );
+  server.registerTool(
+      'update-jira-issue',
+      {
+        title: 'Update Jira Issue',
+        description:
+            'Updates fields of an existing Jira issue: summary, description (replaces the whole text), priority, issue type, and labels (replace the full set, or add/remove specific ones). Only the fields provided are changed. Use transition-jira-issue for status and assign-jira-issue for the assignee.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          summary: z
+              .string()
+              .optional()
+              .describe('New title of the issue'),
+
+          description: z
+              .string()
+              .optional()
+              .describe(
+                  'New description. Replaces the existing description entirely',
+              ),
+
+          priority: z
+              .string()
+              .optional()
+              .describe(
+                  'Priority name, for example Blocker, Critical, Major, Minor, or Trivial',
+              ),
+
+          issueType: z
+              .string()
+              .optional()
+              .describe('Issue type name, for example Bug, Task, or Story'),
+
+          labels: z
+              .array(z.string())
+              .optional()
+              .describe(
+                  'Replaces the full set of labels. Cannot be combined with addLabels or removeLabels',
+              ),
+
+          addLabels: z
+              .array(z.string())
+              .optional()
+              .describe('Labels to add, keeping the existing ones'),
+
+          removeLabels: z
+              .array(z.string())
+              .optional()
+              .describe('Labels to remove, keeping the other ones'),
+        }),
+      },
+      async ({
+               issueKey,
+               summary,
+               description,
+               priority,
+               issueType,
+               labels,
+               addLabels,
+               removeLabels,
+             }) =>
+          runTool('Unable to update Jira issue', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+
+            if (labels && (addLabels?.length || removeLabels?.length)) {
+              throw new Error(
+                  'Use either labels (replace all) or addLabels/removeLabels, not both',
+              );
+            }
+
+            const fields: Record<string, unknown> = {};
+            const update: Record<string, unknown> = {};
+            const changedFields: string[] = [];
+
+            const trimmedSummary = summary?.trim();
+
+            if (trimmedSummary) {
+              fields.summary = trimmedSummary;
+              changedFields.push('summary');
+            }
+
+            if (description !== undefined) {
+              fields.description = createJiraDescription(description.trim());
+              changedFields.push('description');
+            }
+
+            if (priority?.trim()) {
+              fields.priority = { name: priority.trim() };
+              changedFields.push('priority');
+            }
+
+            if (issueType?.trim()) {
+              fields.issuetype = { name: issueType.trim() };
+              changedFields.push('issueType');
+            }
+
+            if (labels) {
+              fields.labels = labels;
+              changedFields.push('labels');
+            }
+
+            const labelOperations = [
+              ...(addLabels ?? []).map((label) => ({ add: label })),
+              ...(removeLabels ?? []).map((label) => ({ remove: label })),
+            ];
+
+            if (labelOperations.length > 0) {
+              update.labels = labelOperations;
+              changedFields.push('labels');
+            }
+
+            if (changedFields.length === 0) {
+              throw new Error('Provide at least one field to update');
+            }
+
+            await updateJiraIssue(normalizedKey, fields, update);
+
+            // Read back so the response reflects what Jira stored.
+            const issue = await getJiraIssue(normalizedKey);
+
+            return jsonResult({
+              ...summarizeIssue(issue),
+              changedFields,
+              description: adfToText(issue.fields.description as never),
+            });
+          }),
+  );
+
+  server.registerTool(
+      'assign-jira-issue',
+      {
+        title: 'Assign Jira Issue',
+        description:
+            'Assigns a Jira issue to a person, to the authenticated user, or removes the assignee. The person can be given by display name, email, or account ID; only users who can be assigned to the issue are considered.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          assignee: z
+              .string()
+              .describe(
+                  'Display name, email, or account ID of the assignee. Use "me" for the authenticated user or "unassigned" to clear the assignee',
+              ),
+        }),
+      },
+      async ({ issueKey, assignee }) =>
+          runTool('Unable to assign Jira issue', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+            const target = normalize(assignee);
+
+            if (!target) {
+              throw new Error('Provide an assignee');
+            }
+
+            const issueBefore = await getJiraIssue(normalizedKey);
+            const previousAssignee = formatUser(issueBefore.fields.assignee);
+
+            let user: JiraUser | null;
+
+            if (target === 'unassigned' || target === 'none' || target === 'nobody') {
+              user = null;
+            } else if (target === 'me' || target === 'myself') {
+              user = await getCurrentJiraUser();
+            } else {
+              user = await resolveAssignableJiraUser(normalizedKey, assignee.trim());
+            }
+
+            const unchanged =
+                (user === null && previousAssignee === null) ||
+                (user !== null && previousAssignee?.accountId === user.accountId);
+
+            if (unchanged) {
+              return jsonResult({
+                issueKey: normalizedKey,
+                url: issueUrl(normalizedKey),
+                previousAssignee,
+                assignee: formatUser(user),
+                changed: false,
+              });
+            }
+
+            await assignJiraIssue(normalizedKey, user ? user.accountId : null);
+
+            const issueAfter = await getJiraIssue(normalizedKey);
+
+            return jsonResult({
+              issueKey: normalizedKey,
+              url: issueUrl(normalizedKey),
+              previousAssignee,
+              assignee: formatUser(issueAfter.fields.assignee),
+              changed: true,
             });
           }),
   );

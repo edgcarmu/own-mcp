@@ -289,3 +289,62 @@ export async function transitionJiraIssue(
       },
   );
 }
+
+export async function updateJiraIssue(
+    issueKey: string,
+    fields: Record<string, unknown>,
+    update?: Record<string, unknown>,
+): Promise<void> {
+  const body: Record<string, unknown> = { fields };
+
+  if (update && Object.keys(update).length > 0) {
+    body.update = update;
+  }
+
+  await jiraFetch<void>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}`,
+      {
+        method: 'PUT',
+        body,
+        errorContext: `Unable to update ${issueKey}`,
+      },
+  );
+}
+
+// Returns users who can be assigned to the issue, optionally filtered by
+// name or email. Unlike /user/search this respects project permissions.
+export async function getAssignableJiraUsers(
+    issueKey: string,
+    query?: string,
+): Promise<JiraUser[]> {
+  const params = new URLSearchParams({
+    issueKey,
+    maxResults: '50',
+  });
+
+  if (query) {
+    params.set('query', query);
+  }
+
+  return jiraFetch<JiraUser[]>(
+      `/rest/api/3/user/assignable/search?${params.toString()}`,
+      {
+        errorContext: `Unable to search assignable users for ${issueKey}`,
+      },
+  );
+}
+
+// Pass null to unassign.
+export async function assignJiraIssue(
+    issueKey: string,
+    accountId: string | null,
+): Promise<void> {
+  await jiraFetch<void>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/assignee`,
+      {
+        method: 'PUT',
+        body: { accountId },
+        errorContext: `Unable to assign ${issueKey}`,
+      },
+  );
+}
