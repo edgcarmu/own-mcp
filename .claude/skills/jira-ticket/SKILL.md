@@ -1,6 +1,6 @@
 ---
 name: jira-ticket
-description: Guided wizard to create a Jira ticket step by step. Gathers project, issue type, priority, summary, description, assignment, sprint and labels interactively, shows a preview, and only creates the ticket after explicit confirmation via the fabi-local-mcp MCP server.
+description: Guided wizard to create a Jira ticket step by step. Gathers project, issue type, priority, summary, description, assignment, sprint and labels interactively, shows a preview, and only creates the ticket after explicit confirmation via the fabi-local-mcp MCP server. After creation, offers to add a follow-up comment to the new ticket.
 ---
 
 # /jira-ticket — guided Jira ticket creation wizard
@@ -61,6 +61,14 @@ Only after an explicit "Create": call `create-jira-ticket` exactly once with the
 ### 10. Result
 Report concisely: ticket key linked to its Jira URL, project, assignee, sprint. If the result contains a `warning` (ticket created but sprint assignment failed), state it and offer to fix the sprint.
 
+### 11. Follow-up comment (optional)
+Right after reporting the result, offer to add a comment to the new ticket with a single AskUserQuestion: "Add a comment to <KEY>?" → "No comment (Recommended)" / "Add a comment".
+- Only suggest "Add a comment" as the recommended option when the conversation contains material that clearly belongs in a comment rather than the description: links to PRs/branches/commits, a first status update, findings gathered while drafting, or notes for the assignee.
+- If the user chooses to add one: draft the comment from the conversation (plain text; keep technical details verbatim), show the full draft in the chat, then confirm with "Post this comment?" → "Post (Recommended)" / "Edit" / "Skip". If Edit, apply the changes and re-confirm.
+- Only after an explicit "Post": call `add-jira-comment` with `issueKey` set to the key returned by `create-jira-ticket` and `comment` set to the confirmed text. Never post more than one comment per run without asking again.
+- Report the result with the comment URL (`url` from the tool response). If the call fails, show the error and leave the ticket as is — do not retry automatically.
+
 ## Extension notes
 - `/jira-bug`, `/jira-task`, `/jira-story`: same flow with the issue type pre-selected (skip that question).
-- New Jira capabilities (updates, comments, transitions, assignee search) belong in `fabi-local-mcp` as new tools; this skill stays orchestration-only.
+- Comments use `add-jira-comment` (step 11). It also works standalone: if the user invokes this skill only to comment on an existing ticket (e.g. `/jira-ticket comment DEV-123 …`), skip steps 1–10 and run step 11 with the given key, still confirming the draft before posting.
+- New Jira capabilities (field updates, transitions, assignee search) belong in `fabi-local-mcp` as new tools; this skill stays orchestration-only.

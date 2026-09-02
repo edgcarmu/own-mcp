@@ -2,6 +2,7 @@ import { jiraFetch } from './client.js';
 import type {
   JiraBoard,
   JiraBoardSearchResponse,
+  JiraComment,
   JiraCreatedIssue,
   JiraIssueType,
   JiraPriority,
@@ -145,6 +146,20 @@ export async function addIssueToSprint(
         method: 'POST',
         body: { issues: [issueKey] },
         errorContext: `Unable to add ${issueKey} to sprint ${sprintId}`,
+      },
+  );
+}
+
+export async function addJiraComment(
+    issueKey: string,
+    text: string,
+): Promise<JiraComment> {
+  return jiraFetch<JiraComment>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`,
+      {
+        method: 'POST',
+        body: { body: createJiraDescription(text) },
+        errorContext: `Unable to add comment to ${issueKey}`,
       },
   );
 }

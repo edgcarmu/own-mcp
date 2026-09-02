@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 
 import {
   addIssueToSprint,
+  addJiraComment,
   createJiraDescription,
   createJiraIssue,
   getActiveSprints,
@@ -350,6 +351,57 @@ export function registerJiraTools(server: McpServer): void {
               ...(sprintWarning !== null
                   ? { warning: sprintWarning }
                   : {}),
+            });
+          }),
+  );
+  server.registerTool(
+      'add-jira-comment',
+      {
+        title: 'Add Jira Comment',
+        description:
+            'Adds a comment to an existing Jira issue, identified by its key (for example DEV-123). Use this to update a ticket with progress, findings, or follow-up notes.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          comment: z
+              .string()
+              .describe('Plain-text comment body to add to the issue'),
+        }),
+      },
+      async ({ issueKey, comment }) =>
+          runTool('Unable to add Jira comment', async () => {
+            const normalizedKey = issueKey.trim().toUpperCase();
+
+            if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(normalizedKey)) {
+              throw new Error(
+                  `"${issueKey}" is not a valid Jira issue key (expected something like DEV-123)`,
+              );
+            }
+
+            const trimmedComment = comment.trim();
+
+            if (!trimmedComment) {
+              throw new Error('Comment body must not be empty');
+            }
+
+            const created = await addJiraComment(
+                normalizedKey,
+                trimmedComment,
+            );
+
+            return jsonResult({
+              issueKey: normalizedKey,
+              commentId: created.id,
+              created: created.created,
+              author: created.author
+                  ? {
+                    accountId: created.author.accountId,
+                    displayName: created.author.displayName,
+                  }
+                  : null,
+              url: `${getJiraBaseUrl()}/browse/${normalizedKey}?focusedCommentId=${created.id}`,
             });
           }),
   );

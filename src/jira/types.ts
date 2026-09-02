@@ -52,3 +52,13 @@ export type JiraIssueType = {
   name: string;
   subtask: boolean;
 };
+
+export type JiraComment = {
+  id: string;
+  self: string;
+  created: string;
+  author?: {
+    accountId: string;
+    displayName: string;
+  };
+};
