@@ -1,36 +1,22 @@
+import { createJiraDescription } from './adf.js';
 import { jiraFetch } from './client.js';
 import type {
   JiraBoard,
   JiraBoardSearchResponse,
   JiraComment,
+  JiraCommentPage,
   JiraCreatedIssue,
+  JiraIssue,
+  JiraIssueComment,
   JiraIssueType,
   JiraPriority,
   JiraProject,
   JiraProjectSearchResponse,
+  JiraSearchResponse,
   JiraSprint,
   JiraSprintSearchResponse,
   JiraUser,
 } from './types.js';
-
-// Builds a minimal Atlassian Document Format body from plain text.
-export function createJiraDescription(text: string) {
-  return {
-    type: 'doc',
-    version: 1,
-    content: [
-      {
-        type: 'paragraph',
-        content: [
-          {
-            type: 'text',
-            text,
-          },
-        ],
-      },
-    ],
-  };
-}
 
 export async function getCurrentJiraUser(): Promise<JiraUser> {
   return jiraFetch<JiraUser>(
@@ -162,4 +148,102 @@ export async function addJiraComment(
         errorContext: `Unable to add comment to ${issueKey}`,
       },
   );
+}
+
+export const ISSUE_SUMMARY_FIELDS = [
+  'summary',
+  'status',
+  'issuetype',
+  'priority',
+  'assignee',
+  'reporter',
+  'labels',
+  'created',
+  'updated',
+  'project',
+  'parent',
+];
+
+export const ISSUE_DETAIL_FIELDS = [
+  ...ISSUE_SUMMARY_FIELDS,
+  'description',
+  'resolutiondate',
+  'subtasks',
+];
+
+export async function getJiraIssue(
+    issueKey: string,
+): Promise<JiraIssue> {
+  const params = new URLSearchParams({
+    fields: ISSUE_DETAIL_FIELDS.join(','),
+  });
+
+  return jiraFetch<JiraIssue>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}?${params.toString()}`,
+      {
+        errorContext: `Unable to retrieve Jira issue ${issueKey}`,
+      },
+  );
+}
+
+// The sprint is only exposed as a named field by the Agile API. The REST v3
+// endpoint is still used for the rest because the Agile one returns the
+// description as wiki markup instead of ADF.
+export async function getJiraIssueSprint(
+    issueKey: string,
+): Promise<JiraSprint | null> {
+  const params = new URLSearchParams({
+    fields: 'sprint',
+  });
+
+  const issue = await jiraFetch<JiraIssue>(
+      `/rest/agile/1.0/issue/${encodeURIComponent(issueKey)}?${params.toString()}`,
+      {
+        errorContext: `Unable to retrieve sprint for ${issueKey}`,
+      },
+  );
+
+  return issue.fields.sprint ?? null;
+}
+
+export async function getJiraIssueComments(
+    issueKey: string,
+    maxResults: number,
+): Promise<JiraCommentPage> {
+  const params = new URLSearchParams({
+    orderBy: '-created',
+    maxResults: String(maxResults),
+  });
+
+  const page = await jiraFetch<JiraCommentPage>(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment?${params.toString()}`,
+      {
+        errorContext: `Unable to retrieve comments for ${issueKey}`,
+      },
+  );
+
+  // Return oldest first so the thread reads top to bottom.
+  const comments: JiraIssueComment[] = [...page.comments].reverse();
+
+  return { comments, total: page.total };
+}
+
+export async function searchJiraIssues(
+    jql: string,
+    maxResults: number,
+): Promise<JiraIssue[]> {
+  const result = await jiraFetch<JiraSearchResponse>(
+      '/rest/api/3/search/jql',
+      {
+        method: 'POST',
+        body: {
+          jql,
+          maxResults,
+          fields: ISSUE_SUMMARY_FIELDS,
+        },
+        errorContext: 'Unable to search Jira issues',
+      },
+  );
+
+  return result.issues;
 }

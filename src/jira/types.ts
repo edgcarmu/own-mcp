@@ -62,3 +62,68 @@ export type JiraComment = {
     displayName: string;
   };
 };
+
+export type JiraNamedEntity = {
+  id: string;
+  name: string;
+};
+
+export type JiraStatus = {
+  id: string;
+  name: string;
+  statusCategory?: {
+    key: string;
+    name: string;
+  };
+};
+
+export type JiraIssueFields = {
+  summary: string;
+  description?: unknown;
+  status?: JiraStatus;
+  issuetype?: JiraNamedEntity & { subtask?: boolean };
+  priority?: JiraNamedEntity;
+  assignee?: JiraUser | null;
+  reporter?: JiraUser | null;
+  labels?: string[];
+  created?: string;
+  updated?: string;
+  resolutiondate?: string | null;
+  project?: JiraProject;
+  parent?: {
+    id: string;
+    key: string;
+    fields?: { summary?: string };
+  };
+  subtasks?: {
+    id: string;
+    key: string;
+    fields?: { summary?: string; status?: JiraStatus };
+  }[];
+  // Populated by the Agile API (/rest/agile/1.0/issue/{key}).
+  sprint?: JiraSprint | null;
+  closedSprint?: JiraSprint[];
+};
+
+export type JiraIssue = {
+  id: string;
+  key: string;
+  self: string;
+  fields: JiraIssueFields;
+};
+
+export type JiraIssueComment = JiraComment & {
+  body?: unknown;
+  updated?: string;
+};
+
+export type JiraCommentPage = {
+  comments: JiraIssueComment[];
+  total: number;
+};
+
+export type JiraSearchResponse = {
+  issues: JiraIssue[];
+  isLast?: boolean;
+  nextPageToken?: string;
+};

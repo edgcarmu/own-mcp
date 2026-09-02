@@ -1,17 +1,21 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
+import { adfToText, createJiraDescription } from '../jira/adf.js';
 import {
   addIssueToSprint,
   addJiraComment,
-  createJiraDescription,
   createJiraIssue,
   getActiveSprints,
   getCurrentJiraUser,
   getJiraBoards,
+  getJiraIssue,
+  getJiraIssueComments,
+  getJiraIssueSprint,
   getJiraIssueTypes,
   getJiraPriorities,
   getJiraProjects,
+  searchJiraIssues,
 } from '../jira/api.js';
 import { getJiraBaseUrl } from '../jira/client.js';
 import {
@@ -20,8 +24,69 @@ import {
   resolveJiraProject,
   sprintMatchesProject,
 } from '../jira/resolvers.js';
-import type { JiraBoard, JiraSprint } from '../jira/types.js';
+import type {
+  JiraBoard,
+  JiraIssue,
+  JiraSprint,
+  JiraUser,
+} from '../jira/types.js';
 import { jsonResult, runTool } from './results.js';
+
+const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9_]*-\d+$/;
+
+// Normalizes "dev-123" to "DEV-123" and rejects anything that is not an issue key.
+function normalizeIssueKey(issueKey: string): string {
+  const normalized = issueKey.trim().toUpperCase();
+
+  if (!ISSUE_KEY_PATTERN.test(normalized)) {
+    throw new Error(
+        `"${issueKey}" is not a valid Jira issue key (expected something like DEV-123)`,
+    );
+  }
+
+  return normalized;
+}
+
+function issueUrl(issueKey: string): string {
+  return `${getJiraBaseUrl()}/browse/${issueKey}`;
+}
+
+function formatUser(user: JiraUser | null | undefined) {
+  return user
+      ? {
+        accountId: user.accountId,
+        displayName: user.displayName,
+      }
+      : null;
+}
+
+// Compact representation shared by search results and issue details.
+function summarizeIssue(issue: JiraIssue) {
+  const { fields } = issue;
+
+  return {
+    key: issue.key,
+    url: issueUrl(issue.key),
+    summary: fields.summary,
+    status: fields.status?.name ?? null,
+    statusCategory: fields.status?.statusCategory?.name ?? null,
+    issueType: fields.issuetype?.name ?? null,
+    priority: fields.priority?.name ?? null,
+    assignee: formatUser(fields.assignee),
+    labels: fields.labels ?? [],
+    project: fields.project ? fields.project.key : null,
+    parent: fields.parent
+        ? { key: fields.parent.key, summary: fields.parent.fields?.summary ?? null }
+        : null,
+    created: fields.created ?? null,
+    updated: fields.updated ?? null,
+  };
+}
+
+// Escapes a value for use inside a double-quoted JQL string.
+function jqlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
 
 export function registerJiraTools(server: McpServer): void {
   server.registerTool(
@@ -372,13 +437,7 @@ export function registerJiraTools(server: McpServer): void {
       },
       async ({ issueKey, comment }) =>
           runTool('Unable to add Jira comment', async () => {
-            const normalizedKey = issueKey.trim().toUpperCase();
-
-            if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(normalizedKey)) {
-              throw new Error(
-                  `"${issueKey}" is not a valid Jira issue key (expected something like DEV-123)`,
-              );
-            }
+            const normalizedKey = normalizeIssueKey(issueKey);
 
             const trimmedComment = comment.trim();
 
@@ -401,7 +460,211 @@ export function registerJiraTools(server: McpServer): void {
                     displayName: created.author.displayName,
                   }
                   : null,
-              url: `${getJiraBaseUrl()}/browse/${normalizedKey}?focusedCommentId=${created.id}`,
+              url: `${issueUrl(normalizedKey)}?focusedCommentId=${created.id}`,
+            });
+          }),
+  );
+  server.registerTool(
+      'get-jira-issue',
+      {
+        title: 'Get Jira Issue',
+        description:
+            'Returns the details of a Jira issue by key: summary, description as plain text, status, type, priority, assignee, reporter, labels, sprint, parent, subtasks and the most recent comments.',
+        inputSchema: z.object({
+          issueKey: z
+              .string()
+              .describe('Jira issue key, for example DEV-123'),
+
+          maxComments: z
+              .number()
+              .int()
+              .min(0)
+              .max(50)
+              .optional()
+              .describe(
+                  'How many of the most recent comments to include (default 10, 0 to skip comments)',
+              ),
+        }),
+      },
+      async ({ issueKey, maxComments }) =>
+          runTool('Unable to get Jira issue', async () => {
+            const normalizedKey = normalizeIssueKey(issueKey);
+            const commentLimit = maxComments ?? 10;
+
+            const [issue, sprint, commentPage] = await Promise.all([
+              getJiraIssue(normalizedKey),
+              getJiraIssueSprint(normalizedKey),
+              commentLimit > 0
+                  ? getJiraIssueComments(normalizedKey, commentLimit)
+                  : Promise.resolve(null),
+            ]);
+
+            const { fields } = issue;
+
+            return jsonResult({
+              ...summarizeIssue(issue),
+              id: issue.id,
+              description: adfToText(fields.description as never),
+              reporter: formatUser(fields.reporter),
+              resolutionDate: fields.resolutiondate ?? null,
+              project: fields.project
+                  ? {
+                    id: fields.project.id,
+                    key: fields.project.key,
+                    name: fields.project.name,
+                  }
+                  : null,
+              sprint: sprint
+                  ? {
+                    id: sprint.id,
+                    name: sprint.name,
+                    state: sprint.state,
+                  }
+                  : null,
+              subtasks: (fields.subtasks ?? []).map((subtask) => ({
+                key: subtask.key,
+                summary: subtask.fields?.summary ?? null,
+                status: subtask.fields?.status?.name ?? null,
+              })),
+              comments: commentPage
+                  ? {
+                    total: commentPage.total,
+                    showing: commentPage.comments.length,
+                    items: commentPage.comments.map((comment) => ({
+                      id: comment.id,
+                      author: comment.author?.displayName ?? null,
+                      created: comment.created,
+                      body: adfToText(comment.body as never),
+                    })),
+                  }
+                  : null,
+            });
+          }),
+  );
+
+  server.registerTool(
+      'search-jira-issues',
+      {
+        title: 'Search Jira Issues',
+        description:
+            'Searches Jira issues. Either pass a raw JQL query, or combine the filters (project, assignedToMe, onlyOpen, status, issueType, inActiveSprint, text) and they are turned into JQL. Results are ordered by last update, newest first.',
+        inputSchema: z.object({
+          jql: z
+              .string()
+              .optional()
+              .describe(
+                  'Raw JQL query. When provided, all other filters are ignored',
+              ),
+
+          project: z
+              .string()
+              .optional()
+              .describe('Jira project name or key'),
+
+          assignedToMe: z
+              .boolean()
+              .optional()
+              .describe('Only issues assigned to the authenticated user'),
+
+          onlyOpen: z
+              .boolean()
+              .optional()
+              .describe(
+                  'Exclude issues whose status category is Done (default true when no status is given)',
+              ),
+
+          status: z
+              .string()
+              .optional()
+              .describe(
+                  'Exact status name, for example "In Progress" or "To Do"',
+              ),
+
+          issueType: z
+              .string()
+              .optional()
+              .describe('Issue type name, for example Bug or Task'),
+
+          inActiveSprint: z
+              .boolean()
+              .optional()
+              .describe('Only issues in a currently open sprint'),
+
+          text: z
+              .string()
+              .optional()
+              .describe(
+                  'Free text matched against summary, description and comments',
+              ),
+
+          maxResults: z
+              .number()
+              .int()
+              .min(1)
+              .max(50)
+              .optional()
+              .describe('Maximum number of issues to return (default 20)'),
+        }),
+      },
+      async ({
+               jql,
+               project,
+               assignedToMe,
+               onlyOpen,
+               status,
+               issueType,
+               inActiveSprint,
+               text,
+               maxResults,
+             }) =>
+          runTool('Unable to search Jira issues', async () => {
+            let query = jql?.trim();
+
+            if (!query) {
+              const clauses: string[] = [];
+
+              if (project) {
+                const resolvedProject = await resolveJiraProject(project);
+                clauses.push(`project = ${jqlString(resolvedProject.key)}`);
+              }
+
+              if (assignedToMe) {
+                clauses.push('assignee = currentUser()');
+              }
+
+              if (status) {
+                clauses.push(`status = ${jqlString(status)}`);
+              } else if (onlyOpen ?? true) {
+                clauses.push('statusCategory != Done');
+              }
+
+              if (issueType) {
+                clauses.push(`issuetype = ${jqlString(issueType)}`);
+              }
+
+              if (inActiveSprint) {
+                clauses.push('sprint in openSprints()');
+              }
+
+              if (text) {
+                clauses.push(`text ~ ${jqlString(text)}`);
+              }
+
+              if (clauses.length === 0) {
+                throw new Error(
+                    'Provide a JQL query or at least one filter',
+                );
+              }
+
+              query = `${clauses.join(' AND ')} ORDER BY updated DESC`;
+            }
+
+            const issues = await searchJiraIssues(query, maxResults ?? 20);
+
+            return jsonResult({
+              jql: query,
+              count: issues.length,
+              issues: issues.map(summarizeIssue),
             });
           }),
   );
