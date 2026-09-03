@@ -1,13 +1,13 @@
 ---
 name: jira-work
-description: Single entry point for Jira via the fabi-local-mcp MCP server. Creates tickets with a guided wizard, works on existing tickets end to end (brief, In Progress, assignment, sprint, wrap-up comment and transition), comments on a ticket, and lists what you are working on. Use for "create a ticket", "work on DEV-123", "pick up a ticket", "what am I working on", "comment on DEV-123", or "close/finish DEV-123".
+description: Single entry point for Jira via the own-mcp MCP server. Creates tickets with a guided wizard, works on existing tickets end to end (brief, In Progress, assignment, sprint, wrap-up comment and transition), comments on a ticket, and lists what you are working on. Use for "create a ticket", "work on DEV-123", "pick up a ticket", "what am I working on", "comment on DEV-123", or "close/finish DEV-123".
 ---
 
 # /jira-work — create and work on Jira tickets
 
-You are the UX/orchestration layer ONLY. All Jira access goes through the `fabi-local-mcp` MCP tools (`mcp__fabi-local-mcp__*`). Never call the Jira REST API directly, and never hardcode project keys, board IDs, sprint IDs, user IDs, statuses, or credentials — always use what the tools return.
+You are the UX/orchestration layer ONLY. All Jira access goes through the `own-mcp` MCP tools (`mcp__own-mcp__*`). Never call the Jira REST API directly, and never hardcode project keys, board IDs, sprint IDs, user IDs, statuses, or credentials — always use what the tools return.
 
-Interact in the language the user is using. If the `fabi-local-mcp` tools are unavailable, say so and stop (suggest checking `/mcp`).
+Interact in the language the user is using. If the `own-mcp` tools are unavailable, say so and stop (suggest checking `/mcp`).
 
 ## Common rules
 
@@ -36,5 +36,5 @@ When the request is ambiguous between New and Work (e.g. "handle the login bug")
 3. Only after "Post": call `add-jira-comment`. Report the comment URL.
 
 ## Extension notes
-- New Jira capabilities belong in `fabi-local-mcp` as tools; this skill stays orchestration-only.
+- New Jira capabilities belong in `own-mcp` as tools; this skill stays orchestration-only.
 - Keep `SKILL.md` short: it is loaded on every invocation. Mode details go in the mode files.

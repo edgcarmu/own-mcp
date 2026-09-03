@@ -1,6 +1,6 @@
 # Roadmap
 
-Where `fabi-local-mcp` goes next. The goal is a personal MCP server that lets a developer, or an agent acting for them, read and work on their projects end to end: the ticket, the code, the data, and the environments.
+Where `own-mcp` goes next. The goal is a personal MCP server that lets a developer, or an agent acting for them, read and work on their projects end to end: the ticket, the code, the data, and the environments.
 
 Status as of 2026-09-02: 18 tools (16 Jira, 2 system) and the `/jira-work` skill. The Jira lifecycle is covered: search, read, create, comment, edit, assign, transition, sprint, links, subtasks.
 

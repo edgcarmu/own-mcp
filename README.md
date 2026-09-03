@@ -1,4 +1,4 @@
-# fabi-local-mcp
+# own-mcp
 
 A local [MCP](https://modelcontextprotocol.io) server that exposes Jira Cloud to Claude Code and other MCP clients, so a developer or an agent can read, create, and work on tickets in natural language.
 
@@ -9,8 +9,8 @@ Tools resolve projects, boards, sprints, transitions, users, and link types by *
 Requirements: Node 22+ and a Jira Cloud account with an API token.
 
 ```bash
-git clone git@github.com:edgcarmu/own-mcp.git fabi-local-mcp
-cd fabi-local-mcp
+git clone git@github.com:edgcarmu/own-mcp.git own-mcp
+cd own-mcp
 npm install
 cp .env.example .env   # then fill in JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 npm run check          # typecheck + unit tests
@@ -21,7 +21,7 @@ The server reads `.env` from its own directory, so it works no matter where the 
 ### Register in Claude Code
 
 ```bash
-claude mcp add fabi-local-mcp -- /absolute/path/to/fabi-local-mcp/node_modules/.bin/tsx /absolute/path/to/fabi-local-mcp/src/index.ts
+claude mcp add own-mcp -- /absolute/path/to/own-mcp/node_modules/.bin/tsx /absolute/path/to/own-mcp/src/index.ts
 ```
 
 Check with `/mcp` inside Claude Code. Restart the server after pulling changes that add tools.
@@ -80,7 +80,7 @@ One Claude Code skill in `.claude/skills/jira-work/` drives the tools with a con
 To use it from any project, symlink it into your global skills directory:
 
 ```bash
-ln -sfn /absolute/path/to/fabi-local-mcp/.claude/skills/jira-work ~/.claude/skills/jira-work
+ln -sfn /absolute/path/to/own-mcp/.claude/skills/jira-work ~/.claude/skills/jira-work
 ```
 
 ## Development

@@ -10,7 +10,7 @@ const { version } = require('../package.json') as { version: string };
 
 export function createServer(): McpServer {
   const server = new McpServer({
-    name: 'fabi-local-mcp',
+    name: 'own-mcp',
     version,
   });
 

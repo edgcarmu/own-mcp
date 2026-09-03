@@ -1,4 +1,4 @@
-# fabi-local-mcp
+# own-mcp
 
 Local MCP server (TypeScript, Node 22, stdio) exposing Jira Cloud tools. See README.md for the tool list and setup.
 
