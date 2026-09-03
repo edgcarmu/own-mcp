@@ -71,4 +71,5 @@ Right after reporting the result, offer to add a comment to the new ticket with 
 ## Extension notes
 - `/jira-bug`, `/jira-task`, `/jira-story`: same flow with the issue type pre-selected (skip that question).
 - Comments use `add-jira-comment` (step 11). It also works standalone: if the user invokes this skill only to comment on an existing ticket (e.g. `/jira-ticket comment DEV-123 …`), skip steps 1–10 and run step 11 with the given key, still confirming the draft before posting.
-- New Jira capabilities (field updates, transitions, assignee search) belong in `fabi-local-mcp` as new tools; this skill stays orchestration-only.
+- `/jira-work` works on an existing ticket (brief, In Progress, wrap-up comment, transition); hand off to it after creation when the user wants to start on the ticket right away.
+- New Jira capabilities belong in `fabi-local-mcp` as new tools; this skill stays orchestration-only.
