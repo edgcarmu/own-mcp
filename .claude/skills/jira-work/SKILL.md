@@ -28,7 +28,7 @@ Pick the mode from the arguments and the conversation, then read the file for th
 | **Status** | "what am I working on", "my tickets", `/jira-work status` | `work.md` (Phases 1–2, then stop) |
 | **Comment** | `/jira-work comment DEV-123 …`, "add a note to DEV-123" | inline, below |
 
-When the request is ambiguous between New and Work (e.g. "handle the login bug"), search first with `search-jira-issues` (`text`, `assignedToMe`) and offer the matches; only propose creating a new ticket when nothing fits.
+When the request is ambiguous between New and Work (e.g. "handle the login bug"), search first with `search-jira-tickets` (`text`, `assignedToMe`) and offer the matches; only propose creating a new ticket when nothing fits.
 
 ### Comment mode
 1. Draft the comment from the conversation and any text given after the key. Plain text; keep technical details verbatim. Show the full draft.

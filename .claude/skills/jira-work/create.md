@@ -12,7 +12,7 @@ Bundle steps as described below to keep the wizard snappy.
 
 ### 2. Fetch project data
 After the project is chosen, call in parallel:
-- `list-jira-issue-types` with the chosen project
+- `list-jira-ticket-types` with the chosen project
 - `list-jira-priorities`
 - `list-jira-active-sprints` with the chosen project
 

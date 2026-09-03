@@ -196,7 +196,7 @@ export function registerJiraTools(server: McpServer): void {
   );
 
   server.registerTool(
-      'list-jira-issue-types',
+      'list-jira-ticket-types',
       {
         title: 'List Jira Issue Types',
         description:
@@ -523,7 +523,7 @@ export function registerJiraTools(server: McpServer): void {
           }),
   );
   server.registerTool(
-      'get-jira-issue',
+      'get-jira-ticket',
       {
         title: 'Get Jira Issue',
         description:
@@ -602,7 +602,7 @@ export function registerJiraTools(server: McpServer): void {
   );
 
   server.registerTool(
-      'search-jira-issues',
+      'search-jira-tickets',
       {
         title: 'Search Jira Issues',
         description:
@@ -722,7 +722,7 @@ export function registerJiraTools(server: McpServer): void {
       {
         title: 'List Jira Transitions',
         description:
-            'Returns the workflow transitions currently available for a Jira issue, with the status each one leads to. Use it to see which statuses transition-jira-issue can move the issue to.',
+            'Returns the workflow transitions currently available for a Jira issue, with the status each one leads to. Use it to see which statuses transition-jira-ticket can move the issue to.',
         inputSchema: z.object({
           issueKey: z
               .string()
@@ -747,7 +747,7 @@ export function registerJiraTools(server: McpServer): void {
   );
 
   server.registerTool(
-      'transition-jira-issue',
+      'transition-jira-ticket',
       {
         title: 'Transition Jira Issue',
         description:
@@ -831,11 +831,11 @@ export function registerJiraTools(server: McpServer): void {
           }),
   );
   server.registerTool(
-      'update-jira-issue',
+      'update-jira-ticket',
       {
         title: 'Update Jira Issue',
         description:
-            'Updates fields of an existing Jira issue: summary, description (replaces the whole text), priority, issue type, and labels (replace the full set, or add/remove specific ones). Only the fields provided are changed. Use transition-jira-issue for status and assign-jira-issue for the assignee.',
+            'Updates fields of an existing Jira issue: summary, description (replaces the whole text), priority, issue type, and labels (replace the full set, or add/remove specific ones). Only the fields provided are changed. Use transition-jira-ticket for status and assign-jira-ticket for the assignee.',
         inputSchema: z.object({
           issueKey: z
               .string()
@@ -961,7 +961,7 @@ export function registerJiraTools(server: McpServer): void {
   );
 
   server.registerTool(
-      'assign-jira-issue',
+      'assign-jira-ticket',
       {
         title: 'Assign Jira Issue',
         description:
@@ -1028,7 +1028,7 @@ export function registerJiraTools(server: McpServer): void {
           }),
   );
   server.registerTool(
-      'add-jira-issue-to-sprint',
+      'add-jira-ticket-to-sprint',
       {
         title: 'Add Jira Issue To Sprint',
         description:
@@ -1138,7 +1138,7 @@ export function registerJiraTools(server: McpServer): void {
   );
 
   server.registerTool(
-      'link-jira-issues',
+      'link-jira-tickets',
       {
         title: 'Link Jira Issues',
         description:

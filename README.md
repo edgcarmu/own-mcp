@@ -36,7 +36,7 @@ For other clients, use the same command and arguments in their MCP configuration
 | --- | --- |
 | `get-jira-current-user` | Authenticated user and base URL. Confirms the connection. |
 | `list-jira-projects` | Projects visible to the user, optionally filtered by name or key. |
-| `list-jira-issue-types` | Standard issue types of a project. |
+| `list-jira-ticket-types` | Standard issue types of a project. |
 | `list-jira-priorities` | Priority names of the instance. |
 | `list-jira-active-sprints` | Scrum boards of a project and their active sprints. |
 | `list-jira-transitions` | Transitions currently available for an issue and the status each leads to. |
@@ -45,8 +45,8 @@ For other clients, use the same command and arguments in their MCP configuration
 
 | Tool | What it does |
 | --- | --- |
-| `get-jira-issue` | Full detail of one issue: description as text, status, assignee, sprint, links, subtasks, recent comments. |
-| `search-jira-issues` | Raw JQL, or filters (`project`, `assignedToMe`, `onlyOpen`, `status`, `issueType`, `inActiveSprint`, `text`) turned into JQL. Paginates with `nextPageToken`. |
+| `get-jira-ticket` | Full detail of one issue: description as text, status, assignee, sprint, links, subtasks, recent comments. |
+| `search-jira-tickets` | Raw JQL, or filters (`project`, `assignedToMe`, `onlyOpen`, `status`, `issueType`, `inActiveSprint`, `text`) turned into JQL. Paginates with `nextPageToken`. |
 
 ### Writing
 
@@ -54,12 +54,12 @@ For other clients, use the same command and arguments in their MCP configuration
 | --- | --- |
 | `create-jira-ticket` | Create an issue by project name or key, optionally self-assigned and added to the active sprint. |
 | `create-jira-subtask` | Create a subtask under an issue; project and subtask type come from the parent. |
-| `update-jira-issue` | Change summary, description, priority, issue type, or labels (replace, add, remove). |
+| `update-jira-ticket` | Change summary, description, priority, issue type, or labels (replace, add, remove). |
 | `add-jira-comment` | Add a plain-text comment. |
-| `transition-jira-issue` | Move an issue to another status by target status name, transition name, or ID. Optional comment and resolution in the same call. |
-| `assign-jira-issue` | Assign by display name, email, or account ID; also `me` and `unassigned`. |
-| `add-jira-issue-to-sprint` | Move an existing issue into the active sprint, or back to the backlog. |
-| `link-jira-issues` | Relate two issues as `<issue> <relation> <target>`, e.g. `DEV-1 "is blocked by" DEV-2`. |
+| `transition-jira-ticket` | Move an issue to another status by target status name, transition name, or ID. Optional comment and resolution in the same call. |
+| `assign-jira-ticket` | Assign by display name, email, or account ID; also `me` and `unassigned`. |
+| `add-jira-ticket-to-sprint` | Move an existing issue into the active sprint, or back to the backlog. |
+| `link-jira-tickets` | Relate two issues as `<issue> <relation> <target>`, e.g. `DEV-1 "is blocked by" DEV-2`. |
 
 Write tools are idempotent where it makes sense: transitioning to the current status, assigning the current assignee, or re-creating an existing link reports `changed: false` instead of erroring.
 

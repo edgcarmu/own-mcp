@@ -1,6 +1,6 @@
 {
   "name": "own-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local MCP server exposing Jira (and a few system) tools to Claude Code and other MCP clients",
   "main": "index.js",
   "scripts": {
