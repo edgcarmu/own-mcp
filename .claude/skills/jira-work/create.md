@@ -1,17 +1,10 @@
----
-name: jira-ticket
-description: Guided wizard to create a Jira ticket step by step. Gathers project, issue type, priority, summary, description, assignment, sprint and labels interactively, shows a preview, and only creates the ticket after explicit confirmation via the fabi-local-mcp MCP server. After creation, offers to add a follow-up comment to the new ticket.
----
+# New mode
 
-# /jira-ticket — guided Jira ticket creation wizard
-
-You are the UX/orchestration layer ONLY. All Jira access goes through the `fabi-local-mcp` MCP tools (`mcp__fabi-local-mcp__*`). Never call the Jira REST API directly from this wizard, and never hardcode project keys, board IDs, sprint IDs, user IDs, priorities, or credentials — always use what the MCP tools return.
-
-Interact in the language the user is using in the conversation. If the `fabi-local-mcp` tools are unavailable, say so and stop (suggest checking `/mcp`).
+Step-by-step wizard to create a ticket. Loaded by `/jira-work` SKILL.md; the common rules there apply.
 
 ## Flow
 
-Use AskUserQuestion for every choice — it renders an interactive picker, and its built-in "Other" option lets the user type a free-form value. It supports at most 4 questions per call and 2–4 options per question, so bundle steps as described below to keep the wizard snappy. Mark defaults with "(Recommended)" as the first option.
+Bundle steps as described below to keep the wizard snappy.
 
 ### 1. Project
 - Call `list-jira-projects` — never assume the project list.
@@ -68,8 +61,5 @@ Right after reporting the result, offer to add a comment to the new ticket with 
 - Only after an explicit "Post": call `add-jira-comment` with `issueKey` set to the key returned by `create-jira-ticket` and `comment` set to the confirmed text. Never post more than one comment per run without asking again.
 - Report the result with the comment URL (`url` from the tool response). If the call fails, show the error and leave the ticket as is — do not retry automatically.
 
-## Extension notes
-- `/jira-bug`, `/jira-task`, `/jira-story`: same flow with the issue type pre-selected (skip that question).
-- Comments use `add-jira-comment` (step 11). It also works standalone: if the user invokes this skill only to comment on an existing ticket (e.g. `/jira-ticket comment DEV-123 …`), skip steps 1–10 and run step 11 with the given key, still confirming the draft before posting.
-- `/jira-work` works on an existing ticket (brief, In Progress, wrap-up comment, transition); hand off to it after creation when the user wants to start on the ticket right away.
-- New Jira capabilities belong in `fabi-local-mcp` as new tools; this skill stays orchestration-only.
+### 12. Start working? (optional)
+Finally ask with AskUserQuestion: "Start working on <KEY> now?" → "Not now (Recommended)" / "Yes, start". Recommend "Yes, start" instead when the ticket was self-assigned and added to the current sprint and the conversation already contains the work to do. On "Yes, start", read `work.md` and enter its Phase 3 directly, skipping the brief.

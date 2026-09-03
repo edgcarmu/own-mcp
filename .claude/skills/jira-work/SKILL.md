@@ -1,65 +1,40 @@
 ---
 name: jira-work
-description: Work on an existing Jira ticket end to end via the fabi-local-mcp MCP server. Loads the ticket (or lets you pick one of your open issues), optionally moves it to In Progress, assigns it and adds it to the sprint, helps do the work, and at the end posts a summary comment and transitions the ticket after explicit confirmation. Use for "work on DEV-123", "pick up a ticket", "what am I working on", or "close/finish DEV-123".
+description: Single entry point for Jira via the fabi-local-mcp MCP server. Creates tickets with a guided wizard, works on existing tickets end to end (brief, In Progress, assignment, sprint, wrap-up comment and transition), comments on a ticket, and lists what you are working on. Use for "create a ticket", "work on DEV-123", "pick up a ticket", "what am I working on", "comment on DEV-123", or "close/finish DEV-123".
 ---
 
-# /jira-work — work on an existing Jira ticket
+# /jira-work — create and work on Jira tickets
 
-You are the UX/orchestration layer ONLY. All Jira access goes through the `fabi-local-mcp` MCP tools (`mcp__fabi-local-mcp__*`). Never call the Jira REST API directly, and never hardcode keys, IDs, statuses, or credentials — always use what the tools return.
+You are the UX/orchestration layer ONLY. All Jira access goes through the `fabi-local-mcp` MCP tools (`mcp__fabi-local-mcp__*`). Never call the Jira REST API directly, and never hardcode project keys, board IDs, sprint IDs, user IDs, statuses, or credentials — always use what the tools return.
 
 Interact in the language the user is using. If the `fabi-local-mcp` tools are unavailable, say so and stop (suggest checking `/mcp`).
 
-Every write to Jira (status change, assignment, sprint, comment, subtask, link) happens only after an explicit confirmation through AskUserQuestion. Reads are free: call them whenever they help.
+## Common rules
+
+- Use AskUserQuestion for every choice — it renders an interactive picker and its built-in "Other" option lets the user type a free-form value. It supports at most 4 questions per call and 2–4 options per question, so bundle related questions. Mark defaults with "(Recommended)" as the first option.
+- Every write to Jira (create, comment, status change, assignment, sprint, subtask, link, field update) happens only after an explicit confirmation. Reads are free: call them whenever they help.
+- Never create more than one ticket, post more than one comment, or transition more than once per run without asking again.
+- If a Jira call fails, show the tool error (it usually lists the valid options) and offer to retry with a corrected value; never retry silently.
 
 ## Modes
 
-Decide the mode from the arguments and the conversation:
+Pick the mode from the arguments and the conversation, then read the file for that mode and follow it.
 
-- **Start** — `/jira-work DEV-123`, `/jira-work` with no key, or "let's work on …": run Phases 1–3.
-- **Finish** — `/jira-work done`, `/jira-work close DEV-123`, or "I'm done with the ticket": run Phase 4 for the ticket being worked on in this conversation (ask for the key if none is known).
-- **Status** — "what am I working on", "my tickets": run Phase 1 only and stop after showing the list/brief.
+| Mode | Triggers | File |
+| --- | --- | --- |
+| **New** | `/jira-work new …`, "create a ticket", "open a bug for this", or any request to file something that does not exist yet | `create.md` |
+| **Work** | `/jira-work DEV-123`, `/jira-work` with no arguments, "let's work on …", "pick up a ticket" | `work.md` (Phases 1–3) |
+| **Finish** | `/jira-work done`, `/jira-work close DEV-123`, "I'm done with the ticket" | `work.md` (Phase 4) |
+| **Status** | "what am I working on", "my tickets", `/jira-work status` | `work.md` (Phases 1–2, then stop) |
+| **Comment** | `/jira-work comment DEV-123 …`, "add a note to DEV-123" | inline, below |
 
-## Phase 1. Pick the ticket
+When the request is ambiguous between New and Work (e.g. "handle the login bug"), search first with `search-jira-issues` (`text`, `assignedToMe`) and offer the matches; only propose creating a new ticket when nothing fits.
 
-- If a key like `DEV-123` is given (case-insensitive), call `get-jira-issue` with it.
-- Otherwise call `search-jira-issues` with `assignedToMe: true`, `onlyOpen: true`, `maxResults: 10`. Ask which ticket to work on with AskUserQuestion: offer up to 4 issues as options, preferring ones in an active sprint (`inActiveSprint` search first if the list is long) and those whose status is In Progress. Put `KEY — summary` in the label and `status · type · priority` in the description. Free text via "Other" is matched against the results; if it names another key, load it directly.
-- If the search is empty, say so and offer to run `/jira-ticket`.
-
-## Phase 2. Brief
-
-Call `get-jira-issue` (default comments) and print a compact brief before anything else:
-
-> **KEY** — summary (linked to `url`)
-> **Status:** … · **Type:** … · **Priority:** … · **Assignee:** … · **Sprint:** … or Backlog
-> **Links:** relation → KEY (summary) … · **Subtasks:** KEY status … (omit empty lines)
-> **Description:** full text
-> **Recent comments:** author, date, first lines (skip if none)
-
-Then summarize in 2–4 lines what the ticket asks for and anything unclear or missing (acceptance criteria, environment, reproduction). In **Status** mode stop here.
-
-## Phase 3. Set up — ONE AskUserQuestion call with only the questions that apply
-
-Skip any question whose answer is already true. Use the real values from the brief and from `list-jira-transitions` (call it first to know the exact status names available).
-
-- **Status** (if `statusCategory` is not "In Progress"): "Move to <In Progress-like status> (Recommended)" / "Keep <current status>". Use the transition whose target status category is In Progress and whose name is closest to "In Progress"; if several exist (e.g. Code Review, Testing In Progress), offer the 2–3 most plausible.
-- **Assignee** (if unassigned or assigned to someone else): "Assign to me (Recommended)" / "Keep <name>".
-- **Sprint** (if the ticket has no sprint and the project has an active sprint per `list-jira-active-sprints`): "Add to <sprint name> (Recommended)" / "Leave in backlog".
-- **Branch** (only when the current working directory is a git repository and the user is about to write code): "Create branch <key>-<short-slug> (Recommended)" / "Stay on current branch". The slug is 3–5 lowercase words from the summary joined by hyphens.
-
-Apply the confirmed choices with `transition-jira-issue`, `assign-jira-issue`, `add-jira-issue-to-sprint`, and `git checkout -b` respectively. Report each result in one line; if any Jira call fails, show the error and continue with the rest.
-
-Then help with the actual work in the normal conversation. Use the ticket description as the source of truth; when the work turns out to have separable parts, offer `create-jira-subtask` (parent = this ticket, one confirmation per subtask). When the user mentions a related ticket, offer `link-jira-issues` with the right relation. Do not post progress comments unprompted; if the user asks to leave a note, draft it, confirm, then `add-jira-comment`.
-
-## Phase 4. Finish
-
-1. Call `get-jira-issue` again (fresh status) and `list-jira-transitions`.
-2. Draft a wrap-up comment from the conversation: what was done, decisions taken, links to PRs/branches/commits if they exist, anything left pending or for QA. Plain text, technical details verbatim. Show the full draft.
-3. ONE AskUserQuestion with two questions:
-   - **Comment**: "Post as is (Recommended)" / "Edit" / "No comment". If Edit, apply the changes and show the draft again before continuing.
-   - **Status**: offer up to 4 real transitions. Recommend, in order of fit: a review status (Code Review, Quality Assurance, Ready for Stage) when a PR was opened; Done/Deployed only when the user said the work is fully complete; otherwise "Keep <current status>". Put the target status name in the label.
-4. Apply with a single `transition-jira-issue` call passing `comment` when both were confirmed (they land together), or `add-jira-comment` alone when the status stays. If the transition fails because a resolution is required, retry once with `resolution` set to the obvious value (Done for completed work, Won't Do for cancelled) after telling the user. Never post more than one comment per finish, and never transition twice on success.
-5. Report: key linked to its URL, previous → new status, and the comment URL if one was posted.
+### Comment mode
+1. Draft the comment from the conversation and any text given after the key. Plain text; keep technical details verbatim. Show the full draft.
+2. AskUserQuestion: "Post this comment on <KEY>?" → "Post (Recommended)" / "Edit" / "Cancel". If Edit, apply the changes and show the draft again.
+3. Only after "Post": call `add-jira-comment`. Report the comment URL.
 
 ## Extension notes
-- Adding new Jira capabilities belongs in `fabi-local-mcp` as tools; this skill stays orchestration-only.
-- `/jira-ticket` creates tickets; hand off to it when the user wants a new ticket rather than working on one.
+- New Jira capabilities belong in `fabi-local-mcp` as tools; this skill stays orchestration-only.
+- Keep `SKILL.md` short: it is loaded on every invocation. Mode details go in the mode files.

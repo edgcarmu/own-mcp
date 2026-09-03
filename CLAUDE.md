@@ -22,6 +22,6 @@ Local MCP server (TypeScript, Node 22, stdio) exposing Jira Cloud tools. See REA
 
 Read-only tools can be exercised live over stdio (see the JSON-RPC snippets in git history). Do not run write tools against real tickets to test them; verify the request shape with types and unit tests instead.
 
-## Skills
+## Skill
 
-`.claude/skills/jira-ticket` and `.claude/skills/jira-work` are the canonical copies; `~/.claude/skills/*` are symlinks to them. Edit here and commit.
+`.claude/skills/jira-work` is the canonical copy; `~/.claude/skills/jira-work` is a symlink to it. Edit here and commit. `SKILL.md` is the router and must stay short; mode details go in `create.md` and `work.md`.

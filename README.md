@@ -65,17 +65,21 @@ Write tools are idempotent where it makes sense: transitioning to the current st
 
 There are also two small system tools, `get-system-info` and `get-git-status`.
 
-## Skills
+## Skill
 
-Two Claude Code skills in `.claude/skills/` drive the tools with confirmations before every write:
+One Claude Code skill in `.claude/skills/jira-work/` drives the tools with a confirmation before every write. `SKILL.md` is a short router; each mode lives in its own file so only what is needed gets loaded.
 
-- **`/jira-ticket`**: step-by-step wizard to create a ticket, with a preview and an optional follow-up comment.
-- **`/jira-work DEV-123`**: work on an existing ticket. Shows a brief, offers to move it to In Progress, assign it, add it to the sprint and create a branch, then `/jira-work done` posts a wrap-up comment and transitions the ticket.
+| Mode | Example | What happens |
+| --- | --- | --- |
+| New | `/jira-work new` or "create a bug for this" | Step-by-step wizard (`create.md`): project, type, priority, summary, description, assignment, sprint, labels, preview, create, optional comment, optional hand-off to Work. |
+| Work | `/jira-work DEV-123` or `/jira-work` | Brief of the ticket, then offers In Progress, self-assignment, sprint and a git branch (`work.md`). |
+| Finish | `/jira-work done` | Wrap-up comment and transition in one confirmed call. |
+| Status | "what am I working on" | Lists your open tickets. |
+| Comment | `/jira-work comment DEV-123 …` | Drafts, confirms and posts a comment. |
 
-To use them from any project, symlink them into your global skills directory:
+To use it from any project, symlink it into your global skills directory:
 
 ```bash
-ln -sfn /absolute/path/to/fabi-local-mcp/.claude/skills/jira-ticket ~/.claude/skills/jira-ticket
 ln -sfn /absolute/path/to/fabi-local-mcp/.claude/skills/jira-work ~/.claude/skills/jira-work
 ```
 
