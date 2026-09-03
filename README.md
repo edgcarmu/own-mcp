@@ -116,6 +116,10 @@ src/
 
 Adding a Jira capability follows the same path: endpoint in `api.ts`, resolver if names are involved, tool in `tools/jira.ts`, unit tests for anything pure, then read the entity back in the tool so the response reflects Jira's state.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned areas: project registry, read-only database access, logs, Confluence, sprint summaries and more.
+
 ## Smoke test against a real instance
 
 The unit tests never touch the network. To verify credentials, run:
