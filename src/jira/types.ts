@@ -89,6 +89,7 @@ export type JiraIssueFields = {
   created?: string;
   updated?: string;
   resolutiondate?: string | null;
+  resolution?: JiraNamedEntity | null;
   project?: JiraProject;
   parent?: {
     id: string;

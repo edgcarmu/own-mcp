@@ -25,6 +25,7 @@ import {
   updateJiraIssue,
 } from '../jira/api.js';
 import { getJiraBaseUrl } from '../jira/client.js';
+import { buildJql } from '../jira/jql.js';
 import {
   resolveActiveSprint,
   resolveAssignableJiraUser,
@@ -124,12 +125,28 @@ function formatTransition(transition: JiraTransition) {
   };
 }
 
-// Escapes a value for use inside a double-quoted JQL string.
-function jqlString(value: string): string {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
-
 export function registerJiraTools(server: McpServer): void {
+  server.registerTool(
+      'get-jira-current-user',
+      {
+        title: 'Get Jira Current User',
+        description:
+            'Returns the authenticated Jira user and the instance base URL. Useful to confirm the connection and to know who "me" refers to.',
+        inputSchema: z.object({}),
+      },
+      async () =>
+          runTool('Unable to get Jira current user', async () => {
+            const user = await getCurrentJiraUser();
+
+            return jsonResult({
+              accountId: user.accountId,
+              displayName: user.displayName,
+              emailAddress: user.emailAddress ?? null,
+              baseUrl: getJiraBaseUrl(),
+            });
+          }),
+  );
+
   server.registerTool(
       'list-jira-projects',
       {
@@ -645,7 +662,14 @@ export function registerJiraTools(server: McpServer): void {
               .min(1)
               .max(50)
               .optional()
-              .describe('Maximum number of issues to return (default 20)'),
+              .describe('Maximum number of issues to return per page (default 20)'),
+
+          pageToken: z
+              .string()
+              .optional()
+              .describe(
+                  'Continues a previous search: pass the nextPageToken returned by the prior call together with the same query or filters',
+              ),
         }),
       },
       async ({
@@ -658,55 +682,38 @@ export function registerJiraTools(server: McpServer): void {
                inActiveSprint,
                text,
                maxResults,
+               pageToken,
              }) =>
           runTool('Unable to search Jira issues', async () => {
             let query = jql?.trim();
 
             if (!query) {
-              const clauses: string[] = [];
+              const resolvedProject = project
+                  ? await resolveJiraProject(project)
+                  : null;
 
-              if (project) {
-                const resolvedProject = await resolveJiraProject(project);
-                clauses.push(`project = ${jqlString(resolvedProject.key)}`);
-              }
-
-              if (assignedToMe) {
-                clauses.push('assignee = currentUser()');
-              }
-
-              if (status) {
-                clauses.push(`status = ${jqlString(status)}`);
-              } else if (onlyOpen ?? true) {
-                clauses.push('statusCategory != Done');
-              }
-
-              if (issueType) {
-                clauses.push(`issuetype = ${jqlString(issueType)}`);
-              }
-
-              if (inActiveSprint) {
-                clauses.push('sprint in openSprints()');
-              }
-
-              if (text) {
-                clauses.push(`text ~ ${jqlString(text)}`);
-              }
-
-              if (clauses.length === 0) {
-                throw new Error(
-                    'Provide a JQL query or at least one filter',
-                );
-              }
-
-              query = `${clauses.join(' AND ')} ORDER BY updated DESC`;
+              query = buildJql({
+                projectKey: resolvedProject?.key,
+                assignedToMe,
+                onlyOpen,
+                status,
+                issueType,
+                inActiveSprint,
+                text,
+              }) ?? undefined;
             }
 
-            const issues = await searchJiraIssues(query, maxResults ?? 20);
+            if (!query) {
+              throw new Error('Provide a JQL query or at least one filter');
+            }
+
+            const page = await searchJiraIssues(query, maxResults ?? 20, pageToken);
 
             return jsonResult({
               jql: query,
-              count: issues.length,
-              issues: issues.map(summarizeIssue),
+              count: page.issues.length,
+              nextPageToken: page.nextPageToken,
+              issues: page.issues.map(summarizeIssue),
             });
           }),
   );
@@ -762,12 +769,22 @@ export function registerJiraTools(server: McpServer): void {
               .describe(
                   'Optional plain-text comment added together with the status change',
               ),
+
+          resolution: z
+              .string()
+              .optional()
+              .describe(
+                  'Resolution name, for example Done, Fixed, or Won\'t Do. Only needed when the transition screen requires a resolution',
+              ),
         }),
       },
-      async ({ issueKey, transition, comment }) =>
+      async ({ issueKey, transition, comment, resolution }) =>
           runTool('Unable to transition Jira issue', async () => {
             const normalizedKey = normalizeIssueKey(issueKey);
             const trimmedComment = comment?.trim() || undefined;
+            const fields = resolution?.trim()
+                ? { resolution: { name: resolution.trim() } }
+                : undefined;
 
             const [issueBefore, transitions] = await Promise.all([
               getJiraIssue(normalizedKey),
@@ -794,6 +811,7 @@ export function registerJiraTools(server: McpServer): void {
                 normalizedKey,
                 resolved.id,
                 trimmedComment,
+                fields,
             );
 
             // Jira answers 204 to the transition; read the issue back so the
@@ -808,6 +826,7 @@ export function registerJiraTools(server: McpServer): void {
               transition: formatTransition(resolved),
               changed: true,
               commentAdded: trimmedComment !== undefined,
+              resolution: issueAfter.fields.resolution?.name ?? null,
             });
           }),
   );

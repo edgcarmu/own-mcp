@@ -175,6 +175,7 @@ export const ISSUE_DETAIL_FIELDS = [
   ...ISSUE_SUMMARY_FIELDS,
   'description',
   'resolutiondate',
+  'resolution',
   'subtasks',
   'issuelinks',
 ];
@@ -236,24 +237,43 @@ export async function getJiraIssueComments(
   return { comments, total: page.total };
 }
 
+export type JiraSearchPage = {
+  issues: JiraIssue[];
+  nextPageToken: string | null;
+};
+
+// `pageToken` continues a previous search; Jira returns `nextPageToken`
+// until the last page.
 export async function searchJiraIssues(
     jql: string,
     maxResults: number,
-): Promise<JiraIssue[]> {
+    pageToken?: string,
+): Promise<JiraSearchPage> {
+  const body: Record<string, unknown> = {
+    jql,
+    maxResults,
+    fields: ISSUE_SUMMARY_FIELDS,
+  };
+
+  if (pageToken) {
+    body.nextPageToken = pageToken;
+  }
+
   const result = await jiraFetch<JiraSearchResponse>(
       '/rest/api/3/search/jql',
       {
         method: 'POST',
-        body: {
-          jql,
-          maxResults,
-          fields: ISSUE_SUMMARY_FIELDS,
-        },
+        body,
         errorContext: 'Unable to search Jira issues',
       },
   );
 
-  return result.issues;
+  return {
+    issues: result.issues,
+    nextPageToken: result.isLast === false && result.nextPageToken
+        ? result.nextPageToken
+        : null,
+  };
 }
 
 export async function getJiraTransitions(
@@ -275,10 +295,15 @@ export async function transitionJiraIssue(
     issueKey: string,
     transitionId: string,
     comment?: string,
+    fields?: Record<string, unknown>,
 ): Promise<void> {
   const body: Record<string, unknown> = {
     transition: { id: transitionId },
   };
+
+  if (fields && Object.keys(fields).length > 0) {
+    body.fields = fields;
+  }
 
   if (comment) {
     body.update = {

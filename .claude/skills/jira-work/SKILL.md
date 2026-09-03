@@ -57,7 +57,7 @@ Then help with the actual work in the normal conversation. Use the ticket descri
 3. ONE AskUserQuestion with two questions:
    - **Comment**: "Post as is (Recommended)" / "Edit" / "No comment". If Edit, apply the changes and show the draft again before continuing.
    - **Status**: offer up to 4 real transitions. Recommend, in order of fit: a review status (Code Review, Quality Assurance, Ready for Stage) when a PR was opened; Done/Deployed only when the user said the work is fully complete; otherwise "Keep <current status>". Put the target status name in the label.
-4. Apply with a single `transition-jira-issue` call passing `comment` when both were confirmed (they land together), or `add-jira-comment` alone when the status stays. Never post more than one comment per finish, and never transition twice.
+4. Apply with a single `transition-jira-issue` call passing `comment` when both were confirmed (they land together), or `add-jira-comment` alone when the status stays. If the transition fails because a resolution is required, retry once with `resolution` set to the obvious value (Done for completed work, Won't Do for cancelled) after telling the user. Never post more than one comment per finish, and never transition twice on success.
 5. Report: key linked to its URL, previous → new status, and the comment URL if one was posted.
 
 ## Extension notes
